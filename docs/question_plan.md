@@ -32,6 +32,13 @@
 | バッチ | 状態 | 問題id | reviewed / draft |
 |---|---|---|---|
 | B1 | 完了 | q001〜q020 | 20 / 0 |
+| B2 | 完了 | q021〜q040 | 20 / 0 |
+
+## 施行日に依存する問題（法改正の施行後に見直すもの）
+
+| id | 内容 | 見直し時期 |
+|---|---|---|
+| q027〜q029 | 公益通報者保護法の令和7年改正（令和7年法律第62号、2026年12月1日施行）。問題文に施行日を明記しているため、施行後も正誤は変わらない。施行後は法定指針（令和8年内閣府告示第15号による改正後）に合わせて根拠を更新する | 2026年12月以降 |
 
 ## 使用した一次情報
 
@@ -40,7 +47,12 @@
 | 金融庁「コンプライアンス・リスク管理に関する検査・監督の考え方と進め方（コンプライアンス・リスク管理基本方針）」（2018年10月） | https://www.fsa.go.jp/news/30/dp/compliance_revised.pdf | B1 |
 | 企業会計審議会「財務報告に係る内部統制の評価及び監査の基準」及び「実施基準」（令和5年4月改訂、意見書を含む） | https://www.fsa.go.jp/news/r4/sonota/20230407/1.pdf | B1 |
 | 金融庁「保険会社向けの総合的な監督指針」（令和8年10月） | https://www.fsa.go.jp/common/law/guide/ins.pdf | B1 |
-| 会社法・会社法施行規則・保険業法（e-Gov法令検索 API で条文を取得） | https://laws.e-gov.go.jp/ | B1 |
+| 会社法・会社法施行規則・保険業法（e-Gov法令検索 API で条文を取得） | https://laws.e-gov.go.jp/ | B1, B2 |
+| 公益通報者保護法（e-Gov法令検索 API、2026年10月時点の現行条文） | https://laws.e-gov.go.jp/ | B2 |
+| 公益通報者保護法に基づく指針（令和3年内閣府告示第118号） | https://www.caa.go.jp/policies/policy/consumer_system/whisleblower_protection_system/overview/assets/overview_210820_0001.pdf | B2 |
+| 消費者庁「公益通報者保護法の概要／令和7年改正法の概要」 | https://www.caa.go.jp/policies/policy/consumer_partnerships/whisleblower_protection_system/overview/assets/consumer_partnerships_cms205_260501_01.pdf | B2 |
+| 金融庁「指定紛争解決機関一覧」 | https://www.fsa.go.jp/policy/adr/shiteifunson/index.html | B2 |
+| 監督指針 Ⅱ－4－3（苦情等への対処・金融ADR）、Ⅱ－4－9（反社会的勢力による被害の防止）※政府指針の基本原則は同項の（参考）で確認 | 上記の監督指針 | B2 |
 
 ## 品質管理の手順（各バッチ共通）
 
