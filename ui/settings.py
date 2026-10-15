@@ -6,9 +6,11 @@ from collections import Counter
 
 import streamlit as st
 
+from quiz.history import HistoryLoadError
 from quiz.models import CATEGORIES, STATUS_DRAFT, STATUS_REVIEWED
-from ui.components import render_table
-from ui.context import AppContext
+from ui.auth import logout, password_required
+from ui.components import render_table, row
+from ui.context import AppContext, reload_history
 
 #: トグルの識別名
 INCLUDE_DRAFT_KEY = "settings_include_draft"
@@ -58,3 +60,25 @@ def render(ctx: AppContext) -> None:
         f"- 制限時間: {config.time_limit_minutes}分"
     )
     st.caption("合格ライン・制限時間は仮の値です。公式の試験要項で確認し、config.yaml を編集してアプリを再読み込みしてください。")
+
+    _render_storage_section(ctx)
+
+
+def _render_storage_section(ctx: AppContext) -> None:
+    """学習履歴の保存先の表示と、最新の履歴の読み込み・ログアウトのボタンを描画する。"""
+    st.subheader("学習履歴の保存先")
+    st.markdown(f"保存先: **{ctx.history.storage_description}**")
+    st.caption("別のPCで解いた内容は、このボタンで読み込むか、ブラウザを開き直すと反映されます。")
+
+    with row("settings_storage"):
+        col_reload, col_logout = st.columns(2)
+        if col_reload.button("🔄 最新の履歴を読み込む", width="stretch"):
+            try:
+                reload_history()
+            except HistoryLoadError as exc:
+                st.error(f"履歴を読み込めませんでした: {exc}")
+            else:
+                st.toast("最新の履歴を読み込みました。")
+        if password_required() and col_logout.button("ログアウト", width="stretch"):
+            logout()
+            st.rerun()

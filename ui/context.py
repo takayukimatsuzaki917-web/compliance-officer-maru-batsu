@@ -9,11 +9,17 @@ import streamlit as st
 
 from quiz.config import AppConfig, ConfigError, load_config
 from quiz.history import HistoryLoadError, HistoryStore
+from quiz.history_backends import DEFAULT_GIST_FILENAME, FileHistoryBackend, GistHistoryBackend, HistoryBackend
 from quiz.loader import load_questions
 from quiz.models import Question
+from ui.app_secrets import GITHUB_SECTION, read_section
 
 #: 設定ファイルの場所（リポジトリのルート）
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.yaml"
+
+#: 読み込んだ履歴をブラウザのセッション中に保持しておく session_state のキー
+#: （画面操作のたびに保存先へ読み込みに行かないようにするため）
+HISTORY_STATE_KEY = "history_store"
 
 
 @dataclass
@@ -41,6 +47,56 @@ class AppContext:
         return self._by_id.get(question_id)
 
 
+def create_history_backend(config: AppConfig) -> HistoryBackend:
+    """履歴の保存先を決める。
+
+    Secrets に GitHub のトークンと Gist の id が設定されていれば Gist に保存し
+    （どのPCからでも同じ履歴を使える）、設定が無ければローカルの history.json に保存する。
+    """
+    github = read_section(GITHUB_SECTION)
+    token = str(github.get("token", "")).strip()
+    gist_id = str(github.get("gist_id", "")).strip()
+    if token and gist_id:
+        filename = str(github.get("filename", DEFAULT_GIST_FILENAME)).strip() or DEFAULT_GIST_FILENAME
+        return GistHistoryBackend(token=token, gist_id=gist_id, filename=filename)
+    return FileHistoryBackend(config.history_file)
+
+
+def get_history_store(config: AppConfig) -> HistoryStore:
+    """履歴を返す。セッションの初回だけ保存先から読み込み、以降は手元の内容を使う。
+
+    読み込みに失敗した場合は、原因を画面に表示してアプリを止める（st.stop）。
+    """
+    store = st.session_state.get(HISTORY_STATE_KEY)
+    if store is not None:
+        return store
+
+    backend = create_history_backend(config)
+    try:
+        store = HistoryStore.load(backend)
+    except HistoryLoadError as exc:
+        st.error(f"学習履歴を読み込めません（保存先: {backend.describe()}）: {exc}")
+        if isinstance(backend, FileHistoryBackend):
+            st.caption(f"{config.history_file.name} を別名で退避するか削除すると、空の履歴で起動します。")
+        else:
+            st.caption("通信状況や Secrets の設定（トークン・Gist の id）を確認し、ブラウザを再読み込みしてください。")
+        st.stop()
+
+    st.session_state[HISTORY_STATE_KEY] = store
+    return store
+
+
+def reload_history() -> None:
+    """保存先から履歴を読み込み直す（他のPCで解いた内容を反映するため）。
+
+    Raises:
+        HistoryLoadError: 保存先から読み込めない場合。
+    """
+    store: HistoryStore | None = st.session_state.get(HISTORY_STATE_KEY)
+    if store is not None:
+        store.reload()
+
+
 def build_context() -> AppContext:
     """設定・問題・履歴を読み込んで AppContext を作る。
 
@@ -59,11 +115,5 @@ def build_context() -> AppContext:
         st.caption("修正後、ブラウザを再読み込みしてください。`python scripts/validate_questions.py` でも確認できます。")
         st.stop()
 
-    try:
-        history = HistoryStore.load(config.history_file)
-    except HistoryLoadError as exc:
-        st.error(f"学習履歴を読み込めません: {exc}")
-        st.caption(f"{config.history_file.name} を別名で退避するか削除すると、空の履歴で起動します。")
-        st.stop()
-
+    history = get_history_store(config)
     return AppContext(config=config, all_questions=result.questions, history=history)
