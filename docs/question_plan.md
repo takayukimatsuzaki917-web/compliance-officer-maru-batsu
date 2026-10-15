@@ -40,6 +40,7 @@
 | B7 | 完了 | q121〜q140 | 20 / 0 |
 | B8 | 完了 | q141〜q160 | 20 / 0 |
 | B9 | 完了 | q161〜q180 | 20 / 0 |
+| B10 | 完了 | q181〜q200 | 20 / 0 |
 
 ## 施行日に依存する問題（法改正の施行後に見直すもの）
 
@@ -78,6 +79,11 @@
 | 生命保険協会「募集関連行為に関するガイドライン」（令和8年1月29日改正） | https://www.seiho.or.jp/activity/guideline/pdf/boshukanren.pdf | B9 |
 | 生命保険協会「保険代理店等に対する便宜供与及び出向に関するガイドライン」（令和7年9月16日制定） | https://www.seiho.or.jp/activity/guideline/pdf/bengisyukko.pdf | B9 |
 | 生命保険協会「保険募集人の体制整備に関するガイドライン」（令和8年5月13日改正） | https://www.seiho.or.jp/activity/guideline/pdf/taiseiseibi.pdf | B9 |
+| 生命保険協会「保険金等の支払いを適切に行うための対応に関するガイドライン」（令和8年6月1日改正） | https://www.seiho.or.jp/activity/guideline/pdf/payment.pdf | B10 |
+| 生命保険協会「市場リスクを有する生命保険の募集等に関するガイドライン」（令和7年7月2日改正） | https://www.seiho.or.jp/activity/guideline/pdf/marketrisk_1.pdf | B10 |
+| 生命保険協会「生命保険商品に関する適正表示ガイドライン」（令和8年1月29日改正） | https://www.seiho.or.jp/activity/guideline/pdf/tekiseihyouji.pdf | B10 |
+| 生命保険協会「行動規範」（平成30年11月16日改正） | https://www.seiho.or.jp/activity/guideline/pdf/kihan.pdf | B10 |
+| 生命保険協会「生命保険業界における反社会的勢力への対応指針」（平成26年2月21日改正） | https://www.seiho.or.jp/activity/guideline/pdf/hansya.pdf | B10 |
 | 監督指針 Ⅱ－4－3（苦情等への対処・金融ADR）、Ⅱ－4－9（反社会的勢力による被害の防止）※政府指針の基本原則は同項の（参考）で確認 | 上記の監督指針 | B2 |
 
 ## 品質管理の手順（各バッチ共通）
