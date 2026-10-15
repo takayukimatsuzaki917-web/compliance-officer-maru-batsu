@@ -97,7 +97,20 @@ streamlit run app.py
    gist_id = "手順1の Gist の id"
    ```
 
+   `gist_id` には、Gist の URL（`https://gist.github.com/ユーザー名/xxxxxxxx`）をそのまま貼り付けても構いません。アプリが末尾の id を取り出して使います。
+
 6. 「Deploy」を押すと、数分でアプリのURL（`https://〇〇.streamlit.app`）が発行されます。各端末のブラウザでブックマークしておくと便利です。
+
+### うまく動かないとき
+
+画面に表示される HTTP のエラー番号で、原因を切り分けられます。Secrets を直したら、Streamlit の画面右下のメニューから「Reboot app」を実行してください。
+
+| 表示 | 主な原因 | 対処 |
+|---|---|---|
+| HTTP 404 | `gist_id` が違う／Gist を削除した／別のアカウントで作った Gist | Gist の URL を開けるか確認し、その URL か末尾の id を `gist_id` に設定する |
+| HTTP 401 | トークンの貼り間違い・有効期限切れ | トークンを発行し直して `token` を更新する |
+| HTTP 403 | トークンに Gist の権限がない | Fine-grained token の Account permissions で「Gists: Read and write」を付ける |
+| gist_id の形式が正しくありません | `gist_id` に記号や日本語が混じっている | Gist の URL の末尾の英数字だけを設定する |
 
 ### 公開時の注意
 

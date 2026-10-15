@@ -11,7 +11,13 @@ import urllib.error
 
 import pytest
 
-from quiz.history_backends import FileHistoryBackend, GistHistoryBackend, HistoryBackendError
+from quiz.history_backends import (
+    FileHistoryBackend,
+    GistHistoryBackend,
+    HistoryBackendError,
+    mask_gist_id,
+    normalize_gist_id,
+)
 
 # ---------------------------------------------------------------
 # ファイル
@@ -75,7 +81,7 @@ class _FakeGitHub:
 
 def test_gist_backend_round_trip():
     fake = _FakeGitHub()
-    backend = GistHistoryBackend("token123", "gist-id", opener=fake)
+    backend = GistHistoryBackend("token123", "abc123", opener=fake)
     assert backend.load() is None  # まだファイルが無い
     backend.save({"version": 1, "mock_results": []})
     assert backend.load() == {"version": 1, "mock_results": []}
@@ -83,9 +89,9 @@ def test_gist_backend_round_trip():
 
 def test_gist_backend_sends_token_and_targets_gist():
     fake = _FakeGitHub()
-    GistHistoryBackend("token123", "gist-id", opener=fake).load()
+    GistHistoryBackend("token123", "abc123", opener=fake).load()
     request = fake.requests[0]
-    assert request.full_url == "https://api.github.com/gists/gist-id"
+    assert request.full_url == "https://api.github.com/gists/abc123"
     assert request.get_header("Authorization") == "Bearer token123"
 
 
@@ -102,3 +108,53 @@ def test_gist_backend_http_error_is_wrapped():
 
 def test_gist_backend_describe_does_not_reveal_token():
     assert "token123" not in GistHistoryBackend("token123", "g").describe()
+
+
+# ---------------------------------------------------------------
+# gist_id の表記ゆれの吸収とエラー表示
+# ---------------------------------------------------------------
+
+GIST_ID = "0123456789abcdef0123456789abcdef"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        GIST_ID,
+        f"  {GIST_ID}  ",
+        f'"{GIST_ID}"',
+        f"https://gist.github.com/someone/{GIST_ID}",
+        f"https://gist.github.com/someone/{GIST_ID}/",
+        f"https://gist.github.com/someone/{GIST_ID}#file-history-json",
+        f"https://gist.github.com/{GIST_ID}.git",
+        f"someone/{GIST_ID}",
+    ],
+)
+def test_normalize_gist_id_accepts_common_formats(value):
+    assert normalize_gist_id(value) == GIST_ID
+
+
+@pytest.mark.parametrize("value", ["", "   ", "https://gist.github.com/", "abc-123", "日本語"])
+def test_normalize_gist_id_rejects_invalid(value):
+    with pytest.raises(HistoryBackendError, match="gist_id"):
+        normalize_gist_id(value)
+
+
+def test_gist_backend_uses_normalized_id_in_url():
+    fake = _FakeGitHub()
+    GistHistoryBackend("t", f"https://gist.github.com/someone/{GIST_ID}", opener=fake).load()
+    assert fake.requests[0].full_url == f"https://api.github.com/gists/{GIST_ID}"
+
+
+def test_gist_backend_404_message_points_to_gist_id():
+    fake = _FakeGitHub(error_code=404)
+    with pytest.raises(HistoryBackendError) as excinfo:
+        GistHistoryBackend("t", GIST_ID, opener=fake).load()
+    message = str(excinfo.value)
+    assert "Gist が見つかりません" in message
+    assert "0123…cdef（32文字）" in message  # id は一部だけ表示する
+    assert GIST_ID not in message
+
+
+def test_mask_gist_id_short_value():
+    assert mask_gist_id("abc") == "abc（3文字）"

@@ -9,7 +9,13 @@ import streamlit as st
 
 from quiz.config import AppConfig, ConfigError, load_config
 from quiz.history import HistoryLoadError, HistoryStore
-from quiz.history_backends import DEFAULT_GIST_FILENAME, FileHistoryBackend, GistHistoryBackend, HistoryBackend
+from quiz.history_backends import (
+    DEFAULT_GIST_FILENAME,
+    FileHistoryBackend,
+    GistHistoryBackend,
+    HistoryBackend,
+    HistoryBackendError,
+)
 from quiz.loader import load_questions
 from quiz.models import Question
 from ui.app_secrets import GITHUB_SECTION, read_section
@@ -52,6 +58,9 @@ def create_history_backend(config: AppConfig) -> HistoryBackend:
 
     Secrets に GitHub のトークンと Gist の id が設定されていれば Gist に保存し
     （どのPCからでも同じ履歴を使える）、設定が無ければローカルの history.json に保存する。
+
+    Raises:
+        HistoryBackendError: gist_id の形式が不正な場合。
     """
     github = read_section(GITHUB_SECTION)
     token = str(github.get("token", "")).strip()
@@ -71,7 +80,13 @@ def get_history_store(config: AppConfig) -> HistoryStore:
     if store is not None:
         return store
 
-    backend = create_history_backend(config)
+    try:
+        backend = create_history_backend(config)
+    except HistoryBackendError as exc:
+        # gist_id の形式が不正な場合など、保存先の設定そのものに誤りがある
+        st.error(f"学習履歴の保存先の設定に誤りがあります: {exc}")
+        st.stop()
+
     try:
         store = HistoryStore.load(backend)
     except HistoryLoadError as exc:

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -29,8 +30,61 @@ DEFAULT_GIST_FILENAME = "history.json"
 DEFAULT_TIMEOUT_SECONDS = 15
 
 
+#: Gist の id として使える文字（英数字のみ）
+GIST_ID_PATTERN = re.compile(r"^[0-9A-Za-z]+$")
+
+#: エラー表示で gist_id の前後に見せる文字数（全体を表示しないため）
+GIST_ID_VISIBLE_CHARS = 4
+
+#: GitHub API の主なエラーコードと、確認してほしい点
+HTTP_ERROR_HINTS: dict[int, str] = {
+    401: "トークンが正しくないか、有効期限が切れています。新しいトークンを発行して Secrets の token を更新してください。",
+    403: "トークンに Gist の権限がありません。Fine-grained token の Account permissions で「Gists: Read and write」を設定してください。",
+    404: (
+        "指定した Gist が見つかりません。Secrets の gist_id に、Gist の URL の末尾の英数字だけを設定しているか、"
+        "Gist を削除していないか確認してください。"
+    ),
+}
+
+
 class HistoryBackendError(Exception):
     """履歴の読み込み・保存に失敗したときに送出する例外。"""
+
+
+def normalize_gist_id(value: str) -> str:
+    """Secrets に設定された gist_id から、Gist の id 部分だけを取り出す。
+
+    次のような書き方でも id を取り出せるようにしている（よくある設定ミスの吸収）。
+      - Gist の URL 全体:   https://gist.github.com/ユーザー名/abc123
+      - ユーザー名付き:     ユーザー名/abc123
+      - 前後の空白や引用符、末尾の「/」「.git」「#…」「?…」
+
+    Args:
+        value: Secrets に設定された文字列。
+
+    Returns:
+        id 部分（英数字）。
+
+    Raises:
+        HistoryBackendError: 取り出した結果が英数字の id にならない場合。
+    """
+    text = value.strip().strip("\"'").strip()
+    text = re.split(r"[?#]", text, maxsplit=1)[0]  # クエリ・アンカーを除く
+    segments = [segment for segment in text.split("/") if segment]
+    candidate = segments[-1] if segments else ""
+    candidate = candidate.removesuffix(".git")
+    if not GIST_ID_PATTERN.match(candidate):
+        raise HistoryBackendError(
+            "Secrets の gist_id の形式が正しくありません。Gist の URL の末尾の英数字（例: 0123456789abcdef…）を設定してください。"
+        )
+    return candidate
+
+
+def mask_gist_id(gist_id: str) -> str:
+    """エラー表示用に、gist_id の前後の数文字と文字数だけを見せる文字列を返す。"""
+    if len(gist_id) <= GIST_ID_VISIBLE_CHARS * 2:
+        return f"{gist_id}（{len(gist_id)}文字）"
+    return f"{gist_id[:GIST_ID_VISIBLE_CHARS]}…{gist_id[-GIST_ID_VISIBLE_CHARS:]}（{len(gist_id)}文字）"
 
 
 class HistoryBackend(Protocol):
@@ -129,8 +183,8 @@ class GistHistoryBackend:
             timeout: 通信の待ち時間の上限（秒）。
             opener: HTTP 通信を行う関数（テストで通信を差し替えるための引数）。
         """
-        self.token = token
-        self.gist_id = gist_id
+        self.token = token.strip()
+        self.gist_id = normalize_gist_id(gist_id)
         self.filename = filename
         self.timeout = timeout
         self._opener = opener
@@ -152,8 +206,10 @@ class GistHistoryBackend:
             with self._opener(request, timeout=self.timeout) as response:
                 return response.read()
         except urllib.error.HTTPError as exc:
-            hint = "トークンの権限（Gists の読み書き）と Gist の id を確認してください" if exc.code in (401, 403, 404) else ""
-            raise HistoryBackendError(f"GitHub Gist との通信でエラーが発生しました（HTTP {exc.code}）。{hint}") from exc
+            hint = HTTP_ERROR_HINTS.get(exc.code, "")
+            raise HistoryBackendError(
+                f"GitHub Gist との通信でエラーが発生しました（HTTP {exc.code}、gist_id: {mask_gist_id(self.gist_id)}）。{hint}"
+            ) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise HistoryBackendError(f"GitHub Gist に接続できません: {exc}") from exc
 
