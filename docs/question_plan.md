@@ -39,6 +39,7 @@
 | B6 | 完了 | q101〜q120 | 20 / 0 |
 | B7 | 完了 | q121〜q140 | 20 / 0 |
 | B8 | 完了 | q141〜q160 | 20 / 0 |
+| B9 | 完了 | q161〜q180 | 20 / 0 |
 
 ## 施行日に依存する問題（法改正の施行後に見直すもの）
 
@@ -73,6 +74,10 @@
 | 改正後の保険業法第294条の4・第100条の2の2（e-Gov法令検索 API） | https://laws.e-gov.go.jp/ | B8 |
 | 生命保険協会「高齢者向けの生命保険サービスに関するガイドライン」（令和5年6月2日改正） | https://www.seiho.or.jp/activity/guideline/pdf/elderly.pdf | B8 |
 | 生命保険協会「未成年者を被保険者とする生命保険契約の適切な申込・引受に関するガイドライン」（令和6年4月1日改正） | https://www.seiho.or.jp/activity/guideline/pdf/miseinen.pdf | B8 |
+| 生命保険協会「正しい告知を受けるための対応に関するガイドライン」（平成26年4月1日改正） | https://www.seiho.or.jp/activity/guideline/pdf/announce.pdf | B9 |
+| 生命保険協会「募集関連行為に関するガイドライン」（令和8年1月29日改正） | https://www.seiho.or.jp/activity/guideline/pdf/boshukanren.pdf | B9 |
+| 生命保険協会「保険代理店等に対する便宜供与及び出向に関するガイドライン」（令和7年9月16日制定） | https://www.seiho.or.jp/activity/guideline/pdf/bengisyukko.pdf | B9 |
+| 生命保険協会「保険募集人の体制整備に関するガイドライン」（令和8年5月13日改正） | https://www.seiho.or.jp/activity/guideline/pdf/taiseiseibi.pdf | B9 |
 | 監督指針 Ⅱ－4－3（苦情等への対処・金融ADR）、Ⅱ－4－9（反社会的勢力による被害の防止）※政府指針の基本原則は同項の（参考）で確認 | 上記の監督指針 | B2 |
 
 ## 品質管理の手順（各バッチ共通）
