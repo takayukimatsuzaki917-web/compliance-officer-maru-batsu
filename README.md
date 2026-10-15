@@ -53,13 +53,73 @@ streamlit run app.py
 
 ブラウザで http://localhost:8501 が開きます。スマホから使う場合は、同じネットワーク内で表示される `Network URL` にアクセスしてください。
 
+## どのPCからでも使う（インターネットに公開する）
+
+[Streamlit Community Cloud](https://share.streamlit.io)（無料）にアプリを置くと、どのPCやスマホのブラウザからでもURLを開くだけで使えます。
+
+- **学習履歴:** GitHub Gist（非公開のメモ置き場）に保存します。どの端末から解いても、同じ履歴を引き継げます。
+- **パスワード:** アプリにパスワードをかけられます。URLを知っている他人に使われたり、履歴を書き換えられたりするのを防ぎます。
+
+### 1. 履歴を保存する Gist を作る
+
+1. GitHub にログインした状態で https://gist.github.com を開きます。
+2. 「Filename including extension」に `history.json`、本文に `{}` と入力します。
+3. **「Create secret gist」**（非公開）で作成します。
+4. 作成後のURL `https://gist.github.com/ユーザー名/xxxxxxxx` の末尾 `xxxxxxxx` が **Gist の id** です。
+
+### 2. Gist を読み書きするためのトークンを発行する
+
+1. GitHub の Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → 「Generate new token」を開きます。
+2. 名前と有効期限を決めます（例: 試験日の少し後まで）。
+3. 「Permissions」の **Account permissions** で **Gists** を **Read and write** にします。ほかの権限は不要です。
+4. 発行されたトークン（`github_pat_...`）をコピーします。トークンは一度しか表示されません。
+
+> [!CAUTION]
+> トークンはパスワードと同じ扱いです。リポジトリやチャットに貼り付けず、次の手順の Secrets にだけ設定してください。有効期限が切れたら、新しいトークンを発行して Secrets を更新します。
+
+### 3. Streamlit Community Cloud で公開する
+
+1. https://share.streamlit.io を開き、GitHub アカウントでログインします。
+2. 「Create app」→「Deploy a public app from GitHub」を選びます。
+3. 次のとおり指定します。
+   - Repository: `takayukimatsuzaki917-web/compliance-officer-maru-batsu`
+   - Branch: `main`
+   - Main file path: `app.py`
+4. 「Advanced settings」を開き、Python のバージョンを 3.12 にします。
+5. 同じ画面の **Secrets** に、次の内容を貼り付けて値を書き換えます（ひな形: `.streamlit/secrets.toml.example`）。
+
+   ```toml
+   [app]
+   password = "自分で決めたパスワード"
+
+   [github]
+   token = "手順2のトークン"
+   gist_id = "手順1の Gist の id"
+   ```
+
+6. 「Deploy」を押すと、数分でアプリのURL（`https://〇〇.streamlit.app`）が発行されます。各端末のブラウザでブックマークしておくと便利です。
+
+### 公開時の注意
+
+- **リポジトリ:** 公開リポジトリなので、問題データやプログラムは誰でも見られます。パスワード・トークン・学習履歴は Secrets と Gist に置くため公開されません。
+- **スリープ:** しばらく使わないとアプリがスリープします。開いたときに起動ボタンが表示されたら押してください（1分ほどで起動します）。履歴は Gist にあるので消えません。
+- **更新の反映:** `main` に push すると、アプリにも自動で反映されます。
+- **複数端末での利用:**
+  - 複数の端末で同時に使っても、保存のたびに Gist の最新内容と統合するので、回答記録は失われません。
+  - 要復習フラグと設定は、最後に変更した内容が優先されます。
+  - 別の端末で解いた内容をすぐ反映したいときは、設定画面の「最新の履歴を読み込む」を押します。
+
+### 自分のPCで Gist の履歴を使う場合
+
+`.streamlit/secrets.toml.example` を `.streamlit/secrets.toml` にコピーして値を設定すると、ローカルで起動したアプリでも同じ Gist の履歴を使えます。`secrets.toml` は `.gitignore` の対象です。Secrets を設定しない場合は、従来どおりパスワードなしで、履歴はローカルの `history.json` に保存されます。
+
 ## テスト
 
 ```bash
 pytest
 ```
 
-スキーマ検証・層化抽出・採点・履歴保存・設定読み込み・類似チェックのテストが実行されます。
+スキーマ検証、層化抽出、採点、履歴保存、履歴の統合（複数端末）、保存先（ファイル／Gist）、パスワード判定、設定読み込み、類似チェックのテストが実行されます。
 
 ## 設定の変更（合格ライン・制限時間など）
 
@@ -125,8 +185,9 @@ python scripts/check_similarity.py     # 類似・重複している問題の検
 ```
 app.py                 アプリの入口（画面の切り替え）
 config.yaml            模試の設定（出題数・合格ライン・制限時間）
-quiz/                  画面に依存しないロジック（検証・抽出・採点・履歴）
-ui/                    Streamlit の各画面と共通部品
+quiz/                  画面に依存しないロジック（検証・抽出・採点・履歴・保存先・認証）
+ui/                    Streamlit の各画面と共通部品（ログイン・Secrets の読み出しを含む）
+.streamlit/            Streamlit の設定（secrets.toml.example は Secrets のひな形）
 data/questions/        問題データ（JSON）
 scripts/               検証・集計・類似チェックのスクリプト
 tests/                 pytest
@@ -135,6 +196,8 @@ docs/                  作成計画（question_plan.md）、要確認一覧（re
 
 ## 学習履歴について
 
-- 学習履歴は `history.json`（リポジトリのルート）に保存されます。`.gitignore` の対象なので、GitHub には上がりません。
-- 履歴をリセットしたい場合は、アプリを止めてから `history.json` を削除してください。
+- 保存先は設定によって変わります（設定画面の「学習履歴の保存先」で確認できます）。
+  - **Secrets に GitHub の設定がある場合:** GitHub Gist の `history.json`
+  - **設定がない場合:** リポジトリのルートの `history.json`（`.gitignore` の対象なので、GitHub には上がりません）
+- 履歴をリセットしたい場合は、Gist の場合は Gist の内容を `{}` に書き換えます。ローカルの場合は、アプリを止めてから `history.json` を削除してください。
 - 模試の途中経過はブラウザのセッション内だけで保持しています。模試の途中でブラウザを再読み込みすると、その模試は中断されます。
