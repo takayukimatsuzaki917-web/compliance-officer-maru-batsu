@@ -1,0 +1,3 @@
+[tool.pytest.ini_options]
+# テストは tests/ 配下のみを対象にする
+testpaths = ["tests"]
