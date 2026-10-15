@@ -33,6 +33,7 @@
 |---|---|---|---|
 | B1 | 完了 | q001〜q020 | 20 / 0 |
 | B2 | 完了 | q021〜q040 | 20 / 0 |
+| B3 | 完了 | q041〜q060 | 20 / 0 |
 
 ## 施行日に依存する問題（法改正の施行後に見直すもの）
 
@@ -52,6 +53,9 @@
 | 公益通報者保護法に基づく指針（令和3年内閣府告示第118号） | https://www.caa.go.jp/policies/policy/consumer_system/whisleblower_protection_system/overview/assets/overview_210820_0001.pdf | B2 |
 | 消費者庁「公益通報者保護法の概要／令和7年改正法の概要」 | https://www.caa.go.jp/policies/policy/consumer_partnerships/whisleblower_protection_system/overview/assets/consumer_partnerships_cms205_260501_01.pdf | B2 |
 | 金融庁「指定紛争解決機関一覧」 | https://www.fsa.go.jp/policy/adr/shiteifunson/index.html | B2 |
+| 犯罪収益移転防止法・個人情報保護法・同法施行規則・保険業法施行規則（e-Gov法令検索 API） | https://laws.e-gov.go.jp/ | B3 |
+| 監督指針 Ⅱ－4－5（顧客等に関する情報管理態勢）、Ⅱ－4－6（顧客の利益の保護のための体制整備）、Ⅱ－4－8（取引時確認等の措置） | 上記の監督指針 | B3 |
+| 金融庁「『金融機関の内部監査の高度化』に向けたプログレスレポート（中間報告）」（令和5年10月）参考1 ※「現状と課題」（令和元年6月）のPDFは文字コードの問題で本文を抽出できなかったため、同じ水準を再掲した本資料で確認 | https://www.fsa.go.jp/news/r5/ginkou/20231024/02.pdf | B3 |
 | 監督指針 Ⅱ－4－3（苦情等への対処・金融ADR）、Ⅱ－4－9（反社会的勢力による被害の防止）※政府指針の基本原則は同項の（参考）で確認 | 上記の監督指針 | B2 |
 
 ## 品質管理の手順（各バッチ共通）
