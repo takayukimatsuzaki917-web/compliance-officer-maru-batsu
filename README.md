@@ -109,8 +109,22 @@ streamlit run app.py
 |---|---|---|
 | HTTP 404 | `gist_id` が違う／Gist を削除した／別のアカウントで作った Gist | Gist の URL を開けるか確認し、その URL か末尾の id を `gist_id` に設定する |
 | HTTP 401 | トークンの貼り間違い・有効期限切れ | トークンを発行し直して `token` を更新する |
-| HTTP 403 | トークンに Gist の権限がない | Fine-grained token の Account permissions で「Gists: Read and write」を付ける |
+| HTTP 403 | トークンの Gists 権限が「Read-only」になっている／Gist とトークンが別のアカウント | Gists の権限を「Read and write」に変更する（下記）。アカウントが違う場合は同じアカウントでそろえる |
 | gist_id の形式が正しくありません | `gist_id` に記号や日本語が混じっている | Gist の URL の末尾の英数字だけを設定する |
+
+原因が分からないときは、アプリの**設定画面 →「Gist への接続を診断する」**を押してください。次の4項目を順に確認し、どこで失敗しているかを表示します（履歴の内容は変わりません）。
+
+1. トークンが有効か（トークンを発行したアカウント名）
+2. Gist を読めるか（Gist を作ったアカウント名）
+3. Gist とトークンが同じアカウントか
+4. Gist に書き込めるか
+
+**トークンの権限を「Read and write」に変更する手順**
+
+1. GitHub の Settings → Developer settings → Personal access tokens → Fine-grained tokens を開きます。
+2. 該当するトークンを選び、「Edit」を押します。
+3. Permissions の Account permissions で **Gists** を探し、Access を **Read and write** にします。権限を追加した直後は「Read-only」になっていることがあるので注意してください。
+4. 「Update」で保存します。トークンの文字列は変わらないので、Secrets の更新は不要です。アプリを開き直せば反映されます。
 
 ### 公開時の注意
 

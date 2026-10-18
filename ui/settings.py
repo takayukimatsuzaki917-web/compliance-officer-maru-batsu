@@ -7,6 +7,7 @@ from collections import Counter
 import streamlit as st
 
 from quiz.history import HistoryLoadError
+from quiz.history_backends import GistHistoryBackend
 from quiz.models import CATEGORIES, STATUS_DRAFT, STATUS_REVIEWED
 from ui.auth import logout, password_required
 from ui.components import render_table, row
@@ -82,3 +83,25 @@ def _render_storage_section(ctx: AppContext) -> None:
         if password_required() and col_logout.button("ログアウト", width="stretch"):
             logout()
             st.rerun()
+
+    if isinstance(ctx.history.backend, GistHistoryBackend):
+        _render_gist_diagnosis(ctx.history.backend)
+
+
+def _render_gist_diagnosis(backend: GistHistoryBackend) -> None:
+    """Gist への接続診断ボタンと、その結果を描画する。"""
+    st.caption("保存できないエラーが出るときは、次のボタンで原因を確認できます（履歴の内容は変わりません）。")
+    if not st.button("🩺 Gist への接続を診断する", width="stretch"):
+        return
+
+    with st.spinner("GitHub に問い合わせています…"):
+        results = backend.diagnose()
+    for result in results:
+        mark = "✔ OK" if result.ok else "✘ NG"
+        message = f"**{mark}　{result.name}**  \n{result.detail}"
+        if result.ok:
+            st.success(message)
+        else:
+            st.error(message)
+    if all(result.ok for result in results):
+        st.info("すべての確認項目に問題はありません。")

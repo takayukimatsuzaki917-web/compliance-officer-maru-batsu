@@ -17,6 +17,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
@@ -39,7 +40,11 @@ GIST_ID_VISIBLE_CHARS = 4
 #: GitHub API の主なエラーコードと、確認してほしい点
 HTTP_ERROR_HINTS: dict[int, str] = {
     401: "トークンが正しくないか、有効期限が切れています。新しいトークンを発行して Secrets の token を更新してください。",
-    403: "トークンに Gist の権限がありません。Fine-grained token の Account permissions で「Gists: Read and write」を設定してください。",
+    403: (
+        "書き込みが拒否されました。トークンの Gists の権限が「Read and write」になっているか（Read-only ではないか）、"
+        "Gist を作ったアカウントとトークンを発行したアカウントが同じか確認してください。"
+        "設定画面の「Gist への接続を診断する」で原因を確認できます。"
+    ),
     404: (
         "指定した Gist が見つかりません。Secrets の gist_id に、Gist の URL の末尾の英数字だけを設定しているか、"
         "Gist を削除していないか確認してください。"
@@ -48,7 +53,47 @@ HTTP_ERROR_HINTS: dict[int, str] = {
 
 
 class HistoryBackendError(Exception):
-    """履歴の読み込み・保存に失敗したときに送出する例外。"""
+    """履歴の読み込み・保存に失敗したときに送出する例外。
+
+    Attributes:
+        status: GitHub API の HTTP ステータスコード（通信エラー以外の場合は None）。
+    """
+
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
+
+
+def describe_github_error(exc: urllib.error.HTTPError) -> str:
+    """GitHub API のエラー応答から、原因の手がかりになる情報を取り出して文章にする。
+
+    取り出す情報:
+      - 応答本文の message（例: "Resource not accessible by personal access token"）
+      - X-Accepted-GitHub-Permissions ヘッダー（Fine-grained token に足りない権限。例: "gists=write"）
+      - X-RateLimit-Remaining ヘッダーが 0 のとき（利用回数の上限に達した）
+
+    Args:
+        exc: urllib が送出した HTTP エラー。
+
+    Returns:
+        「（GitHub からのメッセージ: …）」の形の文字列。手がかりが無ければ空文字。
+    """
+    parts: list[str] = []
+    try:
+        body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+        message = json.loads(body).get("message", "") if body else ""
+    except (ValueError, AttributeError, OSError):
+        message = ""
+    if message:
+        parts.append(f"GitHub からのメッセージ: {message}")
+
+    headers = exc.headers or {}
+    accepted = headers.get("X-Accepted-GitHub-Permissions")
+    if accepted:
+        parts.append(f"必要な権限: {accepted}")
+    if headers.get("X-RateLimit-Remaining") == "0":
+        parts.append("GitHub API の利用回数の上限に達しています。しばらく待ってから再度お試しください")
+    return f"（{' ／ '.join(parts)}）" if parts else ""
 
 
 def normalize_gist_id(value: str) -> str:
@@ -207,8 +252,11 @@ class GistHistoryBackend:
                 return response.read()
         except urllib.error.HTTPError as exc:
             hint = HTTP_ERROR_HINTS.get(exc.code, "")
+            detail = describe_github_error(exc)
             raise HistoryBackendError(
-                f"GitHub Gist との通信でエラーが発生しました（HTTP {exc.code}、gist_id: {mask_gist_id(self.gist_id)}）。{hint}"
+                f"GitHub Gist との通信でエラーが発生しました（HTTP {exc.code}、gist_id: {mask_gist_id(self.gist_id)}）。"
+                f"{hint}{detail}",
+                status=exc.code,
             ) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise HistoryBackendError(f"GitHub Gist に接続できません: {exc}") from exc
@@ -235,3 +283,91 @@ class GistHistoryBackend:
     def describe(self) -> str:
         """保存先の説明（トークンは表示しない）。"""
         return f"GitHub Gist（{self.filename}）"
+
+    # -----------------------------------------------------------
+    # 接続の診断
+    # -----------------------------------------------------------
+
+    def _get_json(self, url: str) -> dict[str, Any]:
+        """GET して JSON を辞書で返す。"""
+        return json.loads(self._request("GET", url).decode("utf-8"))
+
+    def _current_content(self, gist: dict[str, Any]) -> str:
+        """Gist の履歴ファイルの現在の内容（ファイルが無ければ空の履歴 "{}"）を返す。"""
+        file_info = gist.get("files", {}).get(self.filename)
+        if file_info is None:
+            return "{}"
+        if file_info.get("truncated"):
+            return self._request("GET", file_info["raw_url"]).decode("utf-8")
+        return file_info.get("content", "{}")
+
+    def diagnose(self) -> list["DiagnosticResult"]:
+        """Gist への接続を順に確認し、どこで失敗しているかを調べる。
+
+        確認する項目:
+          1. トークンが有効か（トークンの持ち主のアカウント名を取得できるか）
+          2. Gist を読めるか（Gist の持ち主のアカウント名と、履歴ファイルの有無）
+          3. トークンの持ち主と Gist の持ち主が同じアカウントか
+          4. Gist に書き込めるか（現在の内容をそのまま書き戻すので、履歴は変わらない）
+
+        Returns:
+            確認項目ごとの結果のリスト。
+        """
+        results: list[DiagnosticResult] = []
+
+        # 1. トークンの持ち主
+        token_owner = ""
+        try:
+            token_owner = self._get_json(f"{GITHUB_API_URL}/user").get("login", "")
+            results.append(DiagnosticResult("トークンが有効か", True, f"トークンを発行したアカウント: {token_owner}"))
+        except HistoryBackendError as exc:
+            results.append(DiagnosticResult("トークンが有効か", False, str(exc)))
+
+        # 2. Gist の持ち主と履歴ファイル
+        gist: dict[str, Any] | None = None
+        try:
+            gist = self._get_json(f"{GITHUB_API_URL}/gists/{self.gist_id}")
+        except HistoryBackendError as exc:
+            results.append(DiagnosticResult("Gist を読めるか", False, str(exc)))
+        if gist is not None:
+            gist_owner = (gist.get("owner") or {}).get("login", "")
+            has_file = self.filename in gist.get("files", {})
+            file_note = "あり" if has_file else "なし（最初の保存時に作成されます）"
+            results.append(
+                DiagnosticResult("Gist を読めるか", True, f"Gist を作ったアカウント: {gist_owner} ／ {self.filename}: {file_note}")
+            )
+
+            # 3. アカウントの一致
+            if token_owner and gist_owner:
+                same = token_owner.lower() == gist_owner.lower()
+                detail = (
+                    "同じアカウントです"
+                    if same
+                    else (
+                        f"Gist は「{gist_owner}」、トークンは「{token_owner}」のものです。他人の Gist には書き込めません。"
+                        "同じアカウントで Gist を作り直すか、Gist の持ち主のアカウントでトークンを発行し直してください"
+                    )
+                )
+                results.append(DiagnosticResult("Gist とトークンが同じアカウントか", same, detail))
+
+            # 4. 書き込み（現在の内容をそのまま書き戻す）
+            try:
+                content = self._current_content(gist)
+                self._request(
+                    "PATCH",
+                    f"{GITHUB_API_URL}/gists/{self.gist_id}",
+                    {"files": {self.filename: {"content": content}}},
+                )
+                results.append(DiagnosticResult("Gist に書き込めるか", True, "書き込めました（履歴の内容は変わっていません）"))
+            except HistoryBackendError as exc:
+                results.append(DiagnosticResult("Gist に書き込めるか", False, str(exc)))
+        return results
+
+
+@dataclass(frozen=True)
+class DiagnosticResult:
+    """接続診断の確認項目1つ分の結果。"""
+
+    name: str  # 確認項目の名前
+    ok: bool  # 問題がなければ True
+    detail: str  # 確認結果の詳細（失敗時は原因と対処）
