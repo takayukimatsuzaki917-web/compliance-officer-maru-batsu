@@ -15,9 +15,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
@@ -29,6 +31,18 @@ DEFAULT_GIST_FILENAME = "history.json"
 
 #: GitHub API の通信を待つ最大秒数
 DEFAULT_TIMEOUT_SECONDS = 15
+
+#: 利用回数の上限で通信を控えている間のエラーに付けるステータス（Too Many Requests）
+HTTP_TOO_MANY_REQUESTS = 429
+
+#: 利用回数の上限に達したが解除時刻が分からないときに、通信を控える秒数
+DEFAULT_RATE_LIMIT_WAIT_SECONDS = 60
+
+#: 日本時間（UTC+9）。Windows でも追加パッケージなしで使えるよう、固定のオフセットで定義する
+JST = timezone(timedelta(hours=9), "JST")
+
+#: 画面に表示する日時の形式
+JST_DISPLAY_FORMAT = "%m/%d %H:%M"
 
 
 #: Gist の id として使える文字（英数字のみ）
@@ -64,7 +78,7 @@ class HistoryBackendError(Exception):
         self.status = status
 
 
-def describe_github_error(exc: urllib.error.HTTPError) -> str:
+def describe_github_error(exc: urllib.error.HTTPError, now: float | None = None) -> str:
     """GitHub API のエラー応答から、原因の手がかりになる情報を取り出して文章にする。
 
     取り出す情報:
@@ -74,6 +88,7 @@ def describe_github_error(exc: urllib.error.HTTPError) -> str:
 
     Args:
         exc: urllib が送出した HTTP エラー。
+        now: 現在のUNIX時刻（省略時は実際の時刻。Retry-After から解除時刻を計算するのに使う）。
 
     Returns:
         「（GitHub からのメッセージ: …）」の形の文字列。手がかりが無ければ空文字。
@@ -91,9 +106,33 @@ def describe_github_error(exc: urllib.error.HTTPError) -> str:
     accepted = headers.get("X-Accepted-GitHub-Permissions")
     if accepted:
         parts.append(f"必要な権限: {accepted}")
-    if headers.get("X-RateLimit-Remaining") == "0":
-        parts.append("GitHub API の利用回数の上限に達しています。しばらく待ってから再度お試しください")
+    reset_at = rate_limit_reset_epoch(exc, now=now)
+    if reset_at is not None:
+        parts.append(f"GitHub API の利用回数の上限に達しています。{format_jst(reset_at)}（日本時間）ごろに自動で回復します")
     return f"（{' ／ '.join(parts)}）" if parts else ""
+
+
+def format_jst(epoch_seconds: float) -> str:
+    """UNIX時刻を「10/18 13:05」の形の日本時間の文字列にする。"""
+    return datetime.fromtimestamp(epoch_seconds, JST).strftime(JST_DISPLAY_FORMAT)
+
+
+def rate_limit_reset_epoch(exc: urllib.error.HTTPError, now: float | None = None) -> float | None:
+    """利用回数の上限によるエラーなら、制限が解除される時刻（UNIX時刻）を返す。それ以外は None。
+
+    GitHub は上限に達すると、次のどちらかのヘッダーで解除時刻を知らせる。
+      - X-RateLimit-Remaining: 0 と X-RateLimit-Reset（解除時刻のUNIX時刻）
+      - Retry-After（あと何秒待てばよいか）
+    """
+    headers = exc.headers or {}
+    current = time.time() if now is None else now
+    if headers.get("X-RateLimit-Remaining") == "0":
+        reset = headers.get("X-RateLimit-Reset")
+        return float(reset) if reset and reset.isdigit() else current + DEFAULT_RATE_LIMIT_WAIT_SECONDS
+    retry_after = headers.get("Retry-After")
+    if retry_after and retry_after.isdigit():
+        return current + int(retry_after)
+    return None
 
 
 def normalize_gist_id(value: str) -> str:
@@ -219,6 +258,7 @@ class GistHistoryBackend:
         filename: str = DEFAULT_GIST_FILENAME,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         opener: Callable[..., Any] = urllib.request.urlopen,
+        clock: Callable[[], float] = time.time,
     ):
         """
         Args:
@@ -227,19 +267,39 @@ class GistHistoryBackend:
             filename: Gist 内で履歴を保存するファイル名。
             timeout: 通信の待ち時間の上限（秒）。
             opener: HTTP 通信を行う関数（テストで通信を差し替えるための引数）。
+            clock: 現在のUNIX時刻を返す関数（テストで時刻を差し替えるための引数）。
         """
         self.token = token.strip()
         self.gist_id = normalize_gist_id(gist_id)
         self.filename = filename
         self.timeout = timeout
         self._opener = opener
+        self._clock = clock
+        # 利用回数の上限に達したとき、解除されるまで通信を控えるための時刻（UNIX時刻）
+        self._blocked_until = 0.0
 
-    def _request(self, method: str, url: str, body: dict[str, Any] | None = None) -> bytes:
+    def _request(self, method: str, url: str, body: dict[str, Any] | None = None, *, ignore_block: bool = False) -> bytes:
         """GitHub API にリクエストを送り、レスポンス本文を返す。
+
+        利用回数の上限に達した後は、解除時刻まで通信せずにエラーを返す
+        （上限中に通信を繰り返しても成功しないうえ、GitHub に負担をかけるため）。
+
+        Args:
+            method: HTTP メソッド。
+            url: リクエスト先。
+            body: 送信する JSON（無ければ None）。
+            ignore_block: True なら上限中でも通信する（利用状況の確認用。回数を消費しない窓口に限る）。
 
         Raises:
             HistoryBackendError: 通信エラーや、認証失敗などのエラー応答の場合。
         """
+        if not ignore_block and self._clock() < self._blocked_until:
+            raise HistoryBackendError(
+                f"GitHub API の利用回数の上限に達しているため、{format_jst(self._blocked_until)}（日本時間）ごろまで"
+                "保存・読み込みを見合わせています。それまでに解いた分は、このブラウザで開いている間は保持され、回復後の保存時にまとめて書き込まれます。",
+                status=HTTP_TOO_MANY_REQUESTS,
+            )
+
         payload = json.dumps(body).encode("utf-8") if body is not None else None
         request = urllib.request.Request(url, data=payload, method=method)
         request.add_header("Accept", "application/vnd.github+json")
@@ -251,8 +311,14 @@ class GistHistoryBackend:
             with self._opener(request, timeout=self.timeout) as response:
                 return response.read()
         except urllib.error.HTTPError as exc:
-            hint = HTTP_ERROR_HINTS.get(exc.code, "")
-            detail = describe_github_error(exc)
+            reset_at = rate_limit_reset_epoch(exc, now=self._clock())
+            if reset_at is not None:
+                # 利用回数の上限：権限の問題ではないので権限の案内は出さず、解除時刻まで通信を控える
+                self._blocked_until = reset_at
+                hint = ""
+            else:
+                hint = HTTP_ERROR_HINTS.get(exc.code, "")
+            detail = describe_github_error(exc, now=self._clock())
             raise HistoryBackendError(
                 f"GitHub Gist との通信でエラーが発生しました（HTTP {exc.code}、gist_id: {mask_gist_id(self.gist_id)}）。"
                 f"{hint}{detail}",
@@ -288,9 +354,35 @@ class GistHistoryBackend:
     # 接続の診断
     # -----------------------------------------------------------
 
-    def _get_json(self, url: str) -> dict[str, Any]:
+    def _get_json(self, url: str, ignore_block: bool = False) -> dict[str, Any]:
         """GET して JSON を辞書で返す。"""
-        return json.loads(self._request("GET", url).decode("utf-8"))
+        return json.loads(self._request("GET", url, ignore_block=ignore_block).decode("utf-8"))
+
+    def _rate_limit_result(self) -> "DiagnosticResult":
+        """GitHub API の利用状況を確認する（/rate_limit は利用回数を消費しない）。"""
+        name = "GitHub API の利用回数"
+        try:
+            core = self._get_json(f"{GITHUB_API_URL}/rate_limit", ignore_block=True)["resources"]["core"]
+        except (HistoryBackendError, KeyError, ValueError) as exc:
+            return DiagnosticResult(name, False, f"利用状況を取得できませんでした: {exc}")
+
+        limit, used, remaining, reset = core["limit"], core["used"], core["remaining"], core["reset"]
+        summary = (
+            f"1時間あたりの上限 {limit}回 ／ 使用済み {used}回 ／ 残り {remaining}回 ／ "
+            f"回数のリセット: {format_jst(reset)}（日本時間）"
+        )
+        if remaining > 0:
+            self._blocked_until = 0.0  # 回復していれば、通信の見合わせを解除する
+            return DiagnosticResult(name, True, summary)
+
+        self._blocked_until = float(reset)
+        advice = (
+            "上限に達しています。リセット時刻を過ぎると自動的に使えるようになります。"
+            "このアプリの通信は1回の回答につき2回程度です。使用済み回数がとても多い場合は、"
+            "同じGitHubアカウントで連携している他のツール（GitHubと連携した拡張機能やアプリなど）が回数を使っている可能性があります"
+            "（上限はアカウント単位で共有されます）。"
+        )
+        return DiagnosticResult(name, False, f"{summary}  \n{advice}")
 
     def _current_content(self, gist: dict[str, Any]) -> str:
         """Gist の履歴ファイルの現在の内容（ファイルが無ければ空の履歴 "{}"）を返す。"""
@@ -305,15 +397,24 @@ class GistHistoryBackend:
         """Gist への接続を順に確認し、どこで失敗しているかを調べる。
 
         確認する項目:
+          0. GitHub API の利用状況（上限・使用済み回数・解除時刻）
           1. トークンが有効か（トークンの持ち主のアカウント名を取得できるか）
           2. Gist を読めるか（Gist の持ち主のアカウント名と、履歴ファイルの有無）
           3. トークンの持ち主と Gist の持ち主が同じアカウントか
           4. Gist に書き込めるか（現在の内容をそのまま書き戻すので、履歴は変わらない）
 
+        利用回数の上限に達している場合は、以降の確認をしても失敗するだけなので、0 の結果だけを返す。
+
         Returns:
             確認項目ごとの結果のリスト。
         """
         results: list[DiagnosticResult] = []
+
+        # 0. 利用状況（この窓口は利用回数を消費しない）
+        usage = self._rate_limit_result()
+        results.append(usage)
+        if not usage.ok:
+            return results
 
         # 1. トークンの持ち主
         token_owner = ""

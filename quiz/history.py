@@ -28,10 +28,10 @@ from __future__ import annotations
 import copy
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any, Callable, Iterable
 
-from quiz.history_backends import HistoryBackend, HistoryBackendError
+from quiz.history_backends import JST, HistoryBackend, HistoryBackendError
 from quiz.scoring import ExamResult
 
 #: 履歴データの形式のバージョン（将来形式を変えるときの目印）
@@ -47,8 +47,6 @@ DEFAULT_INCLUDE_DRAFT = True
 #: 「一度も変更していない」ことを表す日時（どの日時よりも古いものとして扱う）
 NEVER = ""
 
-#: 日本時間（UTC+9）。Windows でも追加パッケージなしで使えるよう、固定のオフセットで定義する
-JST = timezone(timedelta(hours=9), "JST")
 
 
 class HistoryLoadError(Exception):
